@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>服薬ログ</title>
+<style>
+:root{--bg:#f2f5f9;--card:#fff;--ink:#152238;--muted:#526176;--line:#d4deea;--blue:#075bc8;--green:#146c43;--red:#b42318;--gray:#e7ebf0}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.35}
+button,input,select{font:inherit}
+button{border:0;border-radius:12px;min-height:46px;padding:10px 14px;font-weight:800;cursor:pointer;touch-action:manipulation}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f2b705;outline-offset:2px}
+.nexttime{display:block;font-size:18px;line-height:1.2;font-weight:900;margin-top:5px}
+.take{white-space:normal}
+.primary{background:var(--blue);color:white}
+.secondary{background:#e5ebf3;color:var(--ink)}
+.danger{background:#fff0ef;color:var(--red);border:1px solid #edc3bf}
+.small{min-height:38px;padding:7px 10px;font-size:14px;border-radius:9px}
+.app{height:100dvh;max-width:680px;margin:0 auto;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+header{padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0}
+h1{font-size:23px;margin:0;font-weight:850}
+#today{font-size:13px;color:var(--muted);margin-top:2px}
+#viewTitle{font-size:17px;font-weight:800;padding:0 15px 8px;flex-shrink:0}
+.view{display:none;flex:1;min-height:0;overflow:hidden}
+.view.active{display:flex;flex-direction:column}
+#medList{flex:1;min-height:0;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}
+.med{background:var(--card);border:2px solid var(--line);border-radius:15px;padding:12px;display:grid;grid-template-columns:minmax(0,1fr) 122px;gap:8px;align-items:center}
+.med.off{background:#edf0f4;border-color:#d9dee6}
+.medleft{min-width:0}
+.medname{font-size:19px;font-weight:850;overflow-wrap:anywhere;line-height:1.2;margin-bottom:6px}
+.badge{display:inline-block;font-size:12px;font-weight:850;padding:4px 8px;border-radius:7px;background:#dceaff;color:#084a9b}
+.badge.alt{background:#fff0c2;color:#6d4700}
+.badge.offbadge{background:#dfe3e8;color:#505c6c}
+.log{font-size:14px;font-weight:700;color:#344256;margin-top:7px;overflow-wrap:anywhere}
+.next{font-size:14px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
+.next strong{color:var(--green);font-size:16px}
+.med.off .medname,.med.off .log{color:#687386}
+.medright{display:flex;flex-direction:column;gap:7px}
+.take{min-height:56px;font-size:16px;line-height:1.15;padding:8px}
+.take:disabled{background:#c4cbd5;color:#fff;cursor:not-allowed}
+.empty{background:#fff;border-radius:14px;padding:20px 15px;text-align:center;color:var(--muted);line-height:1.6}
+nav{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line);flex-shrink:0}
+nav button{background:#e8edf4;color:#38465a;min-height:50px;font-size:16px}
+nav button[aria-selected="true"]{background:var(--blue);color:white}
+.settings-scroll{overflow-y:auto;min-height:0;flex:1;padding:0 12px 14px;overscroll-behavior:contain}
+.panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:10px}
+.panel h2{font-size:17px;margin:0 0 10px}
+label{display:block;font-size:14px;font-weight:800;margin:0 0 5px}
+input,select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;padding:11px;background:white;color:var(--ink)}
+.addrow{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:8px}
+.settingrow{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:10px;align-items:center;margin-bottom:12px}
+.sub{font-size:12px;color:var(--muted);margin-top:3px}
+.medsetting{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px;align-items:center}
+.medsetting:first-of-type{border-top:0}
+.medsetting .name{font-weight:800;overflow-wrap:anywhere}
+.medsetting .buttons{display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap}
+.note{font-size:12px;line-height:1.5;color:var(--muted);margin:10px 0 0}
+#toast{position:fixed;z-index:5;left:12px;right:12px;bottom:calc(78px + env(safe-area-inset-bottom));max-width:560px;margin:auto;background:#17202c;color:white;padding:12px 15px;border-radius:12px;display:none;font-weight:700;box-shadow:0 3px 14px #0002}
+@media(max-height:700px){header{padding-top:6px;padding-bottom:5px}h1{font-size:21px}#viewTitle{padding-bottom:5px}.med{padding:9px;grid-template-columns:minmax(0,1fr) 110px}.medname{font-size:17px}.log,.next{font-size:12px}.take{min-height:48px;font-size:14px}#medList{gap:6px}}
+
+.dialog-shade{position:fixed;inset:0;background:#10182899;z-index:20;display:none;align-items:center;justify-content:center;padding:18px}
+.dialog-shade.open{display:flex}
+.dialog{width:100%;max-width:420px;background:#fff;border-radius:16px;padding:18px;box-shadow:0 12px 40px #0003}
+.dialog h2{font-size:20px;margin:0 0 14px}
+.dialog label{display:block;font-size:14px;font-weight:800;margin:12px 0 5px}
+.dialog input,.dialog select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;padding:12px;background:#fff;color:var(--ink)}
+.dialog-actions{display:flex;gap:8px;margin-top:18px}
+.dialog-actions button{flex:1}
+.dialog p{margin:0;color:var(--muted);line-height:1.5}
+
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><div id="today"></div></div><button class="danger small" id="resetTop">今日の記録をリセット</button></header>
+<div id="viewTitle">今日の服薬</div>
+<section class="view active" id="medView" aria-label="服薬">
+  <div id="medList"></div>
+</section>
+<section class="view" id="settingsView" aria-label="設定">
+  <div class="settings-scroll">
+    <div class="panel">
+      <h2>薬を追加</h2>
+      <label for="newName">薬の名前</label>
+      <div class="addrow"><input id="newName" maxlength="60" placeholder="薬の名前を入力"><button class="primary" id="addBtn">追加</button></div>
+    </div>
+    <div class="panel">
+      <h2>表示設定</h2>
+      <div class="settingrow"><div><label for="interval">次の服薬目安</label><div class="sub">記録した時刻から何時間後か</div></div><div style="display:flex;align-items:center;gap:5px"><input id="interval" type="number" min="0.25" max="48" step="0.25" value="5" aria-label="何時間後"><span>時間</span></div></div>
+      <button class="primary" id="saveInterval" style="width:100%">間隔を保存</button>
+      <p class="note">次の服薬目安は計算表示です。実際の服薬時刻・服用間隔・1日の上限は処方指示を優先してください。</p>
+    </div>
+    <div class="panel">
+      <h2>登録済みの薬</h2>
+      <div id="medSettings"></div>
+      <p class="note">薬の名前や「毎日／隔日」の変更、薬の削除はここで行います。隔日に切り替えた日は服薬日として扱い、以後1日おきに切り替わります。</p>
+    </div>
+    <div class="panel">
+      <h2>今日の記録</h2>
+      <button class="danger" id="resetBtn" style="width:100%">今日の服薬記録をすべて消去</button>
+      <p class="note">薬の登録と設定は残ります。記録はこのブラウザ内に保存されます。</p>
+    </div>
+  </div>
+</section>
+<nav aria-label="画面切り替え">
+  <button id="tabMed" aria-selected="true">服薬</button>
+  <button id="tabSettings" aria-selected="false">薬の登録・設定</button>
+</nav>
+</div>
+<div class="dialog-shade" id="editDialog" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="dialog">
+    <h2 id="editTitle">薬の設定</h2>
+    <label for="dialogName">薬の名前</label>
+    <input id="dialogName" maxlength="60" autocomplete="off">
+    <label for="dialogFrequency">服薬頻度</label>
+    <select id="dialogFrequency"><option value="daily">毎日</option><option value="alternate">隔日（1日おき）</option></select>
+    <p class="note">隔日に変更した日は服薬日として扱い、以後1日おきに切り替わります。</p>
+    <div class="dialog-actions"><button class="secondary" id="cancelEdit">キャンセル</button><button class="primary" id="saveEdit">保存</button></div>
+  </div>
+</div>
+<div class="dialog-shade" id="resetDialog" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+  <div class="dialog">
+    <h2 id="resetTitle">今日の記録を消去</h2>
+    <p>今日の服薬記録をすべて消去します。薬の登録と設定は残ります。</p>
+    <div class="dialog-actions"><button class="secondary" id="cancelReset">キャンセル</button><button class="danger" id="confirmReset">記録を消去</button></div>
+  </div>
+</div>
+<div class="dialog-shade" id="deleteDialog" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+  <div class="dialog">
+    <h2 id="deleteTitle">薬を削除</h2>
+    <p id="deleteName">この薬を削除しますか？</p>
+    <div class="dialog-actions"><button class="secondary" id="cancelDelete">キャンセル</button><button class="danger" id="confirmDelete">削除</button></div>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(function(){
+"use strict";
+const STORE="medlog_tabs_v1";
+const $=id=>document.getElementById(id);
+const now=()=>new Date();
+// 服薬記録の1日は午前5時に切り替える（午前0〜4:59は前日扱い）
+const dayKey=d=>{const logical=new Date(d.getTime());logical.setHours(logical.getHours()-5);return `${logical.getFullYear()}-${String(logical.getMonth()+1).padStart(2,"0")}-${String(logical.getDate()).padStart(2,"0")}`;};
+const timeFmt=s=>new Intl.DateTimeFormat("ja-JP",{hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(s));
+const dateFmt=d=>new Intl.DateTimeFormat("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).format(d);
+const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
+let state;
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function load(){
+  try{state=JSON.parse(localStorage.getItem(STORE)||"null");}catch(e){state=null;}
+  if(!state||!Array.isArray(state.meds)){
+    let old=null;try{old=JSON.parse(localStorage.getItem("medlog_v2")||localStorage.getItem("medlog_v1")||"null");}catch(e){}
+    if(old&&Array.isArray(old.meds)){state=old;}else{state={interval:5,recordsDate:dayKey(now()),meds:[
+      {id:uid(),name:"薬 1",frequency:"daily",records:[]},
+      {id:uid(),name:"薬 2",frequency:"daily",records:[]},
+      {id:uid(),name:"薬 3",frequency:"daily",records:[]},
+      {id:uid(),name:"薬 4",frequency:"daily",records:[]},
+      {id:uid(),name:"薬 5",frequency:"daily",records:[]}
+    ]};}
+  }
+  if(!Number.isFinite(Number(state.interval))||Number(state.interval)<=0)state.interval=5;
+  if(!state.recordsDate)state.recordsDate=dayKey(now());
+  state.meds.forEach(m=>{if(!Array.isArray(m.records))m.records=m.last?[m.last]:[];if(!m.frequency)m.frequency="daily";});
+  if(state.recordsDate!==dayKey(now())){state.meds.forEach(m=>{m.records=[];m.last=null;});state.recordsDate=dayKey(now());}
+  save();
+}
+function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch(e){return false;}}
+function scheduled(m){
+  if(m.frequency!=="alternate")return true;
+  const anchor=m.anchorDate||state.recordsDate||dayKey(now());
+  const a=new Date(anchor+"T12:00:00"),b=new Date(dayKey(now())+"T12:00:00");
+  const days=Math.round((b-a)/86400000);
+  return days>=0&&days%2===0;
+}
+function toast(s){$("toast").textContent=s;$("toast").style.display="block";clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").style.display="none",2400);}
+function render(){
+  $("today").textContent=dateFmt(now());
+  $("interval").value=state.interval;
+  const list=$("medList");list.innerHTML="";
+  if(!state.meds.length){list.innerHTML='<div class="empty">薬が登録されていません。<br>下の「薬の登録・設定」から追加してください。</div>';}
+  state.meds.forEach(m=>{
+    const due=scheduled(m),records=m.records||[],last=records.length?records[records.length-1]:null;
+    const card=document.createElement("article");card.className="med"+(due?"":" off");
+    const log=records.length?records.map(timeFmt).join("・"):"—";
+    const next=last?new Date(new Date(last).getTime()+Number(state.interval)*3600000):null;
+    const nextText=next?timeFmt(next.toISOString()):"—";
+    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div><div class="log">${escapeHtml(log)}</div></div><div class="medright"><button class="primary take" ${due?"":"disabled"}>${due?`服薬を記録<br><span class="nexttime">${escapeHtml(nextText)}</span>`:"今日は対象外"}</button></div>`;
+    card.querySelector(".take").addEventListener("click",()=>{
+      if(!scheduled(m))return;
+      const t=now();m.records.push(t.toISOString());m.last=t.toISOString();state.recordsDate=dayKey(t);save();render();toast(m.name+"： "+timeFmt(t.toISOString())+" に記録しました");
+    });
+    list.appendChild(card);
+  });
+  renderSettings();
+}
+let editingMedId=null;
+function openEditDialog(m){
+  editingMedId=m.id;
+  $("dialogName").value=m.name;
+  $("dialogFrequency").value=m.frequency==="alternate"?"alternate":"daily";
+  $("editDialog").classList.add("open");
+  setTimeout(()=>$("dialogName").focus(),50);
+}
+function closeEditDialog(){$("editDialog").classList.remove("open");editingMedId=null;}
+function openResetDialog(){$("resetDialog").classList.add("open");}
+function closeResetDialog(){$("resetDialog").classList.remove("open");}
+function renderSettings(){
+  const root=$("medSettings");root.innerHTML="";
+  if(!state.meds.length){root.innerHTML='<div class="sub">登録された薬はありません。</div>';return;}
+  state.meds.forEach(m=>{
+    const row=document.createElement("div");row.className="medsetting";
+    row.innerHTML=`<div><div class="name">${escapeHtml(m.name)}</div><div class="sub">${m.frequency==="alternate"?"隔日":"毎日"}</div></div><div class="buttons"><button class="secondary small edit">名前・頻度</button><button class="danger small delete">削除</button></div>`;
+    row.querySelector(".edit").addEventListener("click",()=>openEditDialog(m));
+    row.querySelector(".delete").addEventListener("click",()=>{
+      pendingDeleteId=m.id;
+      $("deleteName").textContent="「"+m.name+"」を登録一覧から削除しますか？";
+      $("deleteDialog").classList.add("open");
+    });
+    root.appendChild(row);
+  });
+}
+let pendingDeleteId=null;
+function addMed(){
+  const input=$("newName"),name=input.value.trim();
+  if(!name){toast("薬の名前を入力してください");input.focus();return;}
+  state.meds.push({id:uid(),name:name.slice(0,60),frequency:"daily",records:[]});
+  const ok=save();input.value="";render();toast(ok?"薬を追加しました":"追加しましたが保存に失敗しました");
+}
+function showTab(tab){
+  const med=tab==="med";
+  $("medView").classList.toggle("active",med);$("settingsView").classList.toggle("active",!med);
+  $("tabMed").setAttribute("aria-selected",String(med));$("tabSettings").setAttribute("aria-selected",String(!med));
+  $("viewTitle").textContent=med?"今日の服薬":"薬の登録・設定";
+}
+$("tabMed").addEventListener("click",()=>showTab("med"));
+$("tabSettings").addEventListener("click",()=>showTab("settings"));
+$("addBtn").addEventListener("click",addMed);
+$("newName").addEventListener("keydown",e=>{if(e.key==="Enter")addMed();});
+$("saveInterval").addEventListener("click",()=>{
+  const n=Number($("interval").value);
+  if(!Number.isFinite(n)||n<0.25||n>48){toast("0.25〜48時間で入力してください");return;}
+  state.interval=n;save();render();toast("目安の間隔を保存しました");
+});
+function resetRecords(){
+  state.meds.forEach(m=>{m.records=[];m.last=null;});
+  state.recordsDate=dayKey(now());save();render();closeResetDialog();toast("今日の記録を消去しました");
+}
+$("resetTop").addEventListener("click",openResetDialog);
+$("resetBtn").addEventListener("click",openResetDialog);
+$("cancelReset").addEventListener("click",closeResetDialog);
+$("confirmReset").addEventListener("click",resetRecords);
+$("cancelEdit").addEventListener("click",closeEditDialog);
+$("saveEdit").addEventListener("click",()=>{
+  const m=state.meds.find(x=>x.id===editingMedId);
+  if(!m){closeEditDialog();return;}
+  const name=$("dialogName").value.trim();
+  if(!name){toast("薬の名前を入力してください");$("dialogName").focus();return;}
+  const freq=$("dialogFrequency").value;
+  m.name=name.slice(0,60);
+  if(freq==="alternate"&&m.frequency!=="alternate")m.anchorDate=dayKey(now());
+  if(freq==="daily")delete m.anchorDate;
+  m.frequency=freq;save();closeEditDialog();render();toast("薬の設定を保存しました");
+});
+$("cancelDelete").addEventListener("click",()=>{$("deleteDialog").classList.remove("open");pendingDeleteId=null;});
+$("confirmDelete").addEventListener("click",()=>{
+  if(pendingDeleteId!==null){state.meds=state.meds.filter(x=>x.id!==pendingDeleteId);save();render();toast("薬を削除しました");}
+  $("deleteDialog").classList.remove("open");pendingDeleteId=null;
+});
+
+["editDialog","resetDialog","deleteDialog"].forEach(id=>{
+  $(id).addEventListener("click",e=>{if(e.target!==$(id))return;if(id==="editDialog")closeEditDialog();else if(id==="resetDialog")closeResetDialog();else{$(id).classList.remove("open");pendingDeleteId=null;}});
+});
+load();render();
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&state.recordsDate!==dayKey(now())){state.meds.forEach(m=>{m.records=[];m.last=null;});state.recordsDate=dayKey(now());save();render();}});
+})();
+</script>
+</body>
+</html>
