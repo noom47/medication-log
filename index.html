@@ -34,7 +34,12 @@ h1{font-size:23px;margin:0;font-weight:850}
 .badge{display:inline-block;font-size:12px;font-weight:850;padding:4px 8px;border-radius:7px;background:#dceaff;color:#084a9b}
 .badge.alt{background:#fff0c2;color:#6d4700}
 .badge.offbadge{background:#dfe3e8;color:#505c6c}
-.log{font-size:14px;font-weight:700;color:#344256;margin-top:7px;overflow-wrap:anywhere}
+.log{font-size:14px;font-weight:700;color:#344256;margin-top:7px;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;gap:5px}
+.logtime{min-height:30px;padding:4px 7px;border-radius:7px;background:#e8edf4;color:#24354c;font-size:14px;font-weight:800}
+.med.off .logtime{background:#dfe3e8;color:#596576}
+.orderbtn{min-width:38px;min-height:36px;padding:5px 8px}
+.time-actions{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.time-actions button{flex:1}
 .next{font-size:14px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
 .next strong{color:var(--green);font-size:16px}
 .med.off .medname,.med.off .log{color:#687386}
@@ -96,7 +101,7 @@ input,select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;
     <div class="panel">
       <h2>登録済みの薬</h2>
       <div id="medSettings"></div>
-      <p class="note">薬の名前や「毎日／隔日」の変更、薬の削除はここで行います。隔日に切り替えた日は服薬日として扱い、以後1日おきに切り替わります。</p>
+      <p class="note">薬の名前や「毎日／隔日」の変更、薬の削除、表示順の変更はここで行います。上下ボタンで順番を入れ替えられます。隔日に切り替えた日は服薬日として扱い、以後1日おきに切り替わります。</p>
     </div>
     <div class="panel">
       <h2>今日の記録</h2>
@@ -119,6 +124,24 @@ input,select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;
     <select id="dialogFrequency"><option value="daily">毎日</option><option value="alternate">隔日（1日おき）</option></select>
     <p class="note">隔日に変更した日は服薬日として扱い、以後1日おきに切り替わります。</p>
     <div class="dialog-actions"><button class="secondary" id="cancelEdit">キャンセル</button><button class="primary" id="saveEdit">保存</button></div>
+  </div>
+</div>
+<div class="dialog-shade" id="editTimeDialog" role="dialog" aria-modal="true" aria-labelledby="editTimeTitle">
+  <div class="dialog">
+    <h2 id="editTimeTitle">服薬記録の時刻を編集</h2>
+    <p id="editTimeMedName"></p>
+    <label for="editRecordTime">実際に服用した時刻</label>
+    <input id="editRecordTime" type="time" required>
+    <div class="time-actions"><button class="danger" id="deleteRecordBtn">この記録を削除</button></div>
+    <div class="dialog-actions"><button class="secondary" id="cancelTimeEdit">キャンセル</button><button class="primary" id="saveTimeEdit">時刻を保存</button></div>
+    <p class="note">時刻の修正は記録表示と次回目安の計算に反映されます。</p>
+  </div>
+</div>
+<div class="dialog-shade" id="actionConfirmDialog" role="dialog" aria-modal="true" aria-labelledby="actionConfirmTitle">
+  <div class="dialog">
+    <h2 id="actionConfirmTitle">確認</h2>
+    <p id="actionConfirmMessage"></p>
+    <div class="dialog-actions"><button class="secondary" id="cancelActionConfirm">キャンセル</button><button class="primary" id="acceptActionConfirm">実行する</button></div>
   </div>
 </div>
 <div class="dialog-shade" id="resetDialog" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
@@ -163,7 +186,8 @@ function load(){
   }
   if(!Number.isFinite(Number(state.interval))||Number(state.interval)<=0)state.interval=5;
   if(!state.recordsDate)state.recordsDate=dayKey(now());
-  state.meds.forEach(m=>{if(!Array.isArray(m.records))m.records=m.last?[m.last]:[];if(!m.frequency)m.frequency="daily";});
+  state.meds.forEach((m,i)=>{if(!Array.isArray(m.records))m.records=m.last?[m.last]:[];if(!m.frequency)m.frequency="daily";if(!Number.isFinite(Number(m.order)))m.order=i;m.records.sort((a,b)=>new Date(a)-new Date(b));});
+  state.meds.sort((a,b)=>Number(a.order)-Number(b.order));
   if(state.recordsDate!==dayKey(now())){state.meds.forEach(m=>{m.records=[];m.last=null;});state.recordsDate=dayKey(now());}
   save();
 }
@@ -182,21 +206,97 @@ function render(){
   const list=$("medList");list.innerHTML="";
   if(!state.meds.length){list.innerHTML='<div class="empty">薬が登録されていません。<br>下の「薬の登録・設定」から追加してください。</div>';}
   state.meds.forEach(m=>{
-    const due=scheduled(m),records=m.records||[],last=records.length?records[records.length-1]:null;
+    const due=scheduled(m),records=m.records||[];
+    const sortedRecords=[...records].sort((a,b)=>new Date(a)-new Date(b));
+    const last=sortedRecords.length?sortedRecords[sortedRecords.length-1]:null;
     const card=document.createElement("article");card.className="med"+(due?"":" off");
-    const log=records.length?records.map(timeFmt).join("・"):"—";
+    const log=document.createElement("div");log.className="log";
+    if(sortedRecords.length){
+      sortedRecords.forEach(record=>{
+        const timeButton=document.createElement("button");
+        timeButton.type="button";timeButton.className="logtime";
+        timeButton.textContent=timeFmt(record);timeButton.setAttribute("aria-label",timeFmt(record)+"の記録時刻を編集");
+        timeButton.addEventListener("click",()=>openTimeEditDialog(m.id,record));
+        log.appendChild(timeButton);
+      });
+    }else{log.textContent="—";}
     const next=last?new Date(new Date(last).getTime()+Number(state.interval)*3600000):null;
     const nextText=next?timeFmt(next.toISOString()):"—";
-    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div><div class="log">${escapeHtml(log)}</div></div><div class="medright"><button class="primary take" ${due?"":"disabled"}>${due?`服薬を記録<br><span class="nexttime">${escapeHtml(nextText)}</span>`:"今日は対象外"}</button></div>`;
+    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div></div><div class="medright"><button class="primary take">${due?`服薬を記録<br><span class="nexttime">${escapeHtml(nextText)}</span>`:"今日は対象外"}</button></div>`;
+    card.querySelector(".medleft").appendChild(log);
     card.querySelector(".take").addEventListener("click",()=>{
-      if(!scheduled(m))return;
-      const t=now();m.records.push(t.toISOString());m.last=t.toISOString();state.recordsDate=dayKey(t);save();render();toast(m.name+"： "+timeFmt(t.toISOString())+" に記録しました");
+      if(!scheduled(m)){
+        askConfirm("今日はこの薬の服薬対象日ではありません。\n本日を服薬日に変更し、以後の隔日スケジュールをずらしますか？\n\n※スケジュール変更と実際に服用してよいかの判断は別です。服用前に処方時の指示を確認してください。",()=>{
+          m.anchorDate=dayKey(now());
+          save();
+          render();
+          toast("本日を服薬日に設定しました");
+        },"本日を服薬日にする");
+        return;
+      }
+      const t=now();m.records.push(t.toISOString());m.records.sort((a,b)=>new Date(a)-new Date(b));m.last=t.toISOString();state.recordsDate=dayKey(t);save();render();toast(m.name+"： "+timeFmt(t.toISOString())+" に記録しました");
     });
     list.appendChild(card);
   });
   renderSettings();
 }
 let editingMedId=null;
+let editingRecord=null;
+function openTimeEditDialog(medId,record){
+  editingRecord={medId,record};
+  const m=state.meds.find(x=>x.id===medId);
+  if(!m)return;
+  $("editTimeMedName").textContent=m.name+" の記録";
+  $("editRecordTime").value=new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(record));
+  $("editTimeDialog").classList.add("open");
+}
+function closeTimeEditDialog(){$("editTimeDialog").classList.remove("open");editingRecord=null;}
+function saveRecordTime(){
+  if(!editingRecord)return;
+  const m=state.meds.find(x=>x.id===editingRecord.medId);
+  const value=$("editRecordTime").value;
+  if(!m||!value){toast("時刻を入力してください");return;}
+  const oldDate=new Date(editingRecord.record);
+  const [hours,minutes]=value.split(":").map(Number);
+  oldDate.setHours(hours,minutes,0,0);
+  const replacement=oldDate.toISOString();
+  const index=m.records.findIndex(x=>x===editingRecord.record);
+  if(index<0){closeTimeEditDialog();render();return;}
+  m.records[index]=replacement;
+  m.records.sort((a,b)=>new Date(a)-new Date(b));
+  m.last=m.records.length?m.records[m.records.length-1]:null;
+  save();closeTimeEditDialog();render();toast("服薬記録の時刻を修正しました");
+}
+function deleteRecord(){
+  if(!editingRecord)return;
+  const target={medId:editingRecord.medId,record:editingRecord.record};
+  askConfirm("この服薬記録（"+timeFmt(target.record)+"）だけを削除しますか？\n他の記録と薬の設定は残ります。",()=>{
+    const m=state.meds.find(x=>x.id===target.medId);
+    if(!m)return;
+    const index=m.records.findIndex(x=>x===target.record);
+    if(index>=0)m.records.splice(index,1);
+    m.records.sort((a,b)=>new Date(a)-new Date(b));
+    m.last=m.records.length?m.records[m.records.length-1]:null;
+    save();closeTimeEditDialog();render();toast("服薬記録を1件削除しました");
+  },"この記録を削除");
+}
+let actionConfirmCallback=null;
+function askConfirm(message,callback,buttonText="実行する"){
+  actionConfirmCallback=callback;
+  $("actionConfirmMessage").textContent=message;
+  $("acceptActionConfirm").textContent=buttonText;
+  $("actionConfirmDialog").classList.add("open");
+}
+function closeActionConfirm(){
+  $("actionConfirmDialog").classList.remove("open");
+  actionConfirmCallback=null;
+}
+function acceptActionConfirm(){
+  const callback=actionConfirmCallback;
+  closeActionConfirm();
+  if(typeof callback==="function")callback();
+}
+
 function openEditDialog(m){
   editingMedId=m.id;
   $("dialogName").value=m.name;
@@ -210,9 +310,11 @@ function closeResetDialog(){$("resetDialog").classList.remove("open");}
 function renderSettings(){
   const root=$("medSettings");root.innerHTML="";
   if(!state.meds.length){root.innerHTML='<div class="sub">登録された薬はありません。</div>';return;}
-  state.meds.forEach(m=>{
+  state.meds.forEach((m,index)=>{
     const row=document.createElement("div");row.className="medsetting";
-    row.innerHTML=`<div><div class="name">${escapeHtml(m.name)}</div><div class="sub">${m.frequency==="alternate"?"隔日":"毎日"}</div></div><div class="buttons"><button class="secondary small edit">名前・頻度</button><button class="danger small delete">削除</button></div>`;
+    row.innerHTML=`<div><div class="name">${escapeHtml(m.name)}</div><div class="sub">${m.frequency==="alternate"?"隔日":"毎日"} ・ 表示順 ${index+1}</div></div><div class="buttons"><button class="secondary small orderbtn up" aria-label="${escapeHtml(m.name)}を上へ" ${index===0?"disabled":""}>↑</button><button class="secondary small orderbtn down" aria-label="${escapeHtml(m.name)}を下へ" ${index===state.meds.length-1?"disabled":""}>↓</button><button class="secondary small edit">名前・頻度</button><button class="danger small delete">削除</button></div>`;
+    row.querySelector(".up").addEventListener("click",()=>moveMed(index,-1));
+    row.querySelector(".down").addEventListener("click",()=>moveMed(index,1));
     row.querySelector(".edit").addEventListener("click",()=>openEditDialog(m));
     row.querySelector(".delete").addEventListener("click",()=>{
       pendingDeleteId=m.id;
@@ -222,11 +324,19 @@ function renderSettings(){
     root.appendChild(row);
   });
 }
+function moveMed(index,delta){
+  const target=index+delta;
+  if(target<0||target>=state.meds.length)return;
+  const [item]=state.meds.splice(index,1);
+  state.meds.splice(target,0,item);
+  state.meds.forEach((m,i)=>m.order=i);
+  save();render();toast("表示順を変更しました");
+}
 let pendingDeleteId=null;
 function addMed(){
   const input=$("newName"),name=input.value.trim();
   if(!name){toast("薬の名前を入力してください");input.focus();return;}
-  state.meds.push({id:uid(),name:name.slice(0,60),frequency:"daily",records:[]});
+  state.meds.push({id:uid(),name:name.slice(0,60),frequency:"daily",records:[],order:state.meds.length});
   const ok=save();input.value="";render();toast(ok?"薬を追加しました":"追加しましたが保存に失敗しました");
 }
 function showTab(tab){
@@ -253,6 +363,11 @@ $("resetBtn").addEventListener("click",openResetDialog);
 $("cancelReset").addEventListener("click",closeResetDialog);
 $("confirmReset").addEventListener("click",resetRecords);
 $("cancelEdit").addEventListener("click",closeEditDialog);
+$("cancelTimeEdit").addEventListener("click",closeTimeEditDialog);
+$("saveTimeEdit").addEventListener("click",saveRecordTime);
+$("deleteRecordBtn").addEventListener("click",deleteRecord);
+$("cancelActionConfirm").addEventListener("click",closeActionConfirm);
+$("acceptActionConfirm").addEventListener("click",acceptActionConfirm);
 $("saveEdit").addEventListener("click",()=>{
   const m=state.meds.find(x=>x.id===editingMedId);
   if(!m){closeEditDialog();return;}
@@ -270,7 +385,7 @@ $("confirmDelete").addEventListener("click",()=>{
   $("deleteDialog").classList.remove("open");pendingDeleteId=null;
 });
 
-["editDialog","resetDialog","deleteDialog"].forEach(id=>{
+["editDialog","editTimeDialog","actionConfirmDialog","resetDialog","deleteDialog"].forEach(id=>{
   $(id).addEventListener("click",e=>{if(e.target!==$(id))return;if(id==="editDialog")closeEditDialog();else if(id==="resetDialog")closeResetDialog();else{$(id).classList.remove("open");pendingDeleteId=null;}});
 });
 load();render();
