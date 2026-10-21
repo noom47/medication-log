@@ -14,6 +14,7 @@ button,input,select{font:inherit}
 button{border:0;border-radius:12px;min-height:46px;padding:10px 14px;font-weight:800;cursor:pointer;touch-action:manipulation}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f2b705;outline-offset:2px}
 .nexttime{display:block;font-size:18px;line-height:1.2;font-weight:900;margin-top:5px}
+.nextdate{display:block;font-size:12px;line-height:1.25;font-weight:800;margin-top:5px;color:#fff;opacity:.98}
 .take{white-space:normal}
 .primary{background:var(--blue);color:white}
 .secondary{background:#e5ebf3;color:var(--ink)}
@@ -101,7 +102,7 @@ input,select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;
     <div class="panel">
       <h2>登録済みの薬</h2>
       <div id="medSettings"></div>
-      <p class="note">薬の名前や「毎日／隔日」の変更、薬の削除、表示順の変更はここで行います。上下ボタンで順番を入れ替えられます。隔日に切り替えた日は服薬日として扱い、以後1日おきに切り替わります。</p>
+      <p class="note">薬の名前や服薬頻度（毎日／指定日数ごと）の変更、薬の削除、表示順の変更はここで行います。上下ボタンで順番を入れ替えられます。日数間隔を変更した日は服薬対象日として扱います。</p>
     </div>
     <div class="panel">
       <h2>今日の記録</h2>
@@ -121,8 +122,9 @@ input,select{width:100%;min-width:0;border:1px solid #aab7c8;border-radius:10px;
     <label for="dialogName">薬の名前</label>
     <input id="dialogName" maxlength="60" autocomplete="off">
     <label for="dialogFrequency">服薬頻度</label>
-    <select id="dialogFrequency"><option value="daily">毎日</option><option value="alternate">隔日（1日おき）</option></select>
-    <p class="note">隔日に変更した日は服薬日として扱い、以後1日おきに切り替わります。</p>
+    <select id="dialogFrequency"><option value="daily">毎日</option><option value="interval">指定した日数ごと</option></select>
+    <div id="intervalDaysRow" class="settingrow" style="margin-top:10px"><div><label for="dialogIntervalDays">服薬間隔</label><div class="sub">何日ごとに服用するか</div></div><div style="display:flex;align-items:center;gap:6px"><input id="dialogIntervalDays" type="number" min="1" max="365" step="1" value="2" style="width:90px" aria-label="服薬間隔の日数"><span>日ごと</span></div></div>
+    <p class="note">間隔を変更した日は服薬対象日として扱い、そこから指定日数ごとに繰り返します。服用前に処方時の指示を確認してください。</p>
     <div class="dialog-actions"><button class="secondary" id="cancelEdit">キャンセル</button><button class="primary" id="saveEdit">保存</button></div>
   </div>
 </div>
@@ -169,6 +171,8 @@ const now=()=>new Date();
 const dayKey=d=>{const logical=new Date(d.getTime());logical.setHours(logical.getHours()-5);return `${logical.getFullYear()}-${String(logical.getMonth()+1).padStart(2,"0")}-${String(logical.getDate()).padStart(2,"0")}`;};
 const timeFmt=s=>new Intl.DateTimeFormat("ja-JP",{hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(s));
 const dateFmt=d=>new Intl.DateTimeFormat("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).format(d);
+const addDaysKey=(key,days)=>{const d=new Date(key+"T12:00:00");d.setDate(d.getDate()+days);return dayKey(d);};
+const shortDate=key=>{const [y,m,d]=key.split("-").map(Number);return `${m}月${d}日`;};
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 let state;
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -186,18 +190,19 @@ function load(){
   }
   if(!Number.isFinite(Number(state.interval))||Number(state.interval)<=0)state.interval=5;
   if(!state.recordsDate)state.recordsDate=dayKey(now());
-  state.meds.forEach((m,i)=>{if(!Array.isArray(m.records))m.records=m.last?[m.last]:[];if(!m.frequency)m.frequency="daily";if(!Number.isFinite(Number(m.order)))m.order=i;m.records.sort((a,b)=>new Date(a)-new Date(b));});
+  state.meds.forEach((m,i)=>{if(!Array.isArray(m.records))m.records=m.last?[m.last]:[];if(!m.frequency)m.frequency="daily";if(m.frequency==="alternate"){m.frequency="interval";m.intervalDays=2;}if(m.frequency==="interval"&&(!Number.isInteger(Number(m.intervalDays))||Number(m.intervalDays)<1))m.intervalDays=2;if(!Number.isFinite(Number(m.order)))m.order=i;m.records.sort((a,b)=>new Date(a)-new Date(b));});
   state.meds.sort((a,b)=>Number(a.order)-Number(b.order));
   if(state.recordsDate!==dayKey(now())){state.meds.forEach(m=>{m.records=[];m.last=null;});state.recordsDate=dayKey(now());}
   save();
 }
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch(e){return false;}}
 function scheduled(m){
-  if(m.frequency!=="alternate")return true;
+  if(m.frequency!=="interval"&&m.frequency!=="alternate")return true;
   const anchor=m.anchorDate||state.recordsDate||dayKey(now());
   const a=new Date(anchor+"T12:00:00"),b=new Date(dayKey(now())+"T12:00:00");
   const days=Math.round((b-a)/86400000);
-  return days>=0&&days%2===0;
+  const every=m.frequency==="alternate"?2:Math.max(1,Number(m.intervalDays)||2);
+  return days>=0&&days%every===0;
 }
 function toast(s){$("toast").textContent=s;$("toast").style.display="block";clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").style.display="none",2400);}
 function render(){
@@ -222,11 +227,14 @@ function render(){
     }else{log.textContent="—";}
     const next=last?new Date(new Date(last).getTime()+Number(state.interval)*3600000):null;
     const nextText=next?timeFmt(next.toISOString()):"—";
-    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div></div><div class="medright"><button class="primary take">${due?`服薬を記録<br><span class="nexttime">${escapeHtml(nextText)}</span>`:"今日は対象外"}</button></div>`;
+    const intervalMode=m.frequency==="interval"||m.frequency==="alternate";
+    const nextDoseDate=intervalMode&&m.lastDoseDate?addDaysKey(m.lastDoseDate,m.frequency==="alternate"?2:(Number(m.intervalDays)||2)):null;
+    const nextDateText=nextDoseDate?`<span class="nextdate">次は${shortDate(nextDoseDate)}</span>`:"";
+    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div></div><div class="medright"><button class="primary take">${due?`服薬を記録${intervalMode?"":"<br><span class=\"nexttime\">"+escapeHtml(nextText)+"</span>"}${nextDateText}`:"今日は対象外"}</button></div>`;
     card.querySelector(".medleft").appendChild(log);
     card.querySelector(".take").addEventListener("click",()=>{
       if(!scheduled(m)){
-        askConfirm("今日はこの薬の服薬対象日ではありません。\n本日を服薬日に変更し、以後の隔日スケジュールをずらしますか？\n\n※スケジュール変更と実際に服用してよいかの判断は別です。服用前に処方時の指示を確認してください。",()=>{
+        askConfirm("今日はこの薬の服薬対象日ではありません。\n本日を服薬日に変更し、以後の服薬スケジュールをずらしますか？\n\n※スケジュール変更と実際に服用してよいかの判断は別です。服用前に処方時の指示を確認してください。",()=>{
           m.anchorDate=dayKey(now());
           save();
           render();
@@ -234,7 +242,7 @@ function render(){
         },"本日を服薬日にする");
         return;
       }
-      const t=now();m.records.push(t.toISOString());m.records.sort((a,b)=>new Date(a)-new Date(b));m.last=t.toISOString();state.recordsDate=dayKey(t);save();render();toast(m.name+"： "+timeFmt(t.toISOString())+" に記録しました");
+      const t=now();m.records.push(t.toISOString());m.records.sort((a,b)=>new Date(a)-new Date(b));m.last=t.toISOString();if(m.frequency==="interval"||m.frequency==="alternate")m.lastDoseDate=dayKey(t);state.recordsDate=dayKey(t);save();render();toast(m.name+"： "+timeFmt(t.toISOString())+" に記録しました");
     });
     list.appendChild(card);
   });
@@ -300,7 +308,9 @@ function acceptActionConfirm(){
 function openEditDialog(m){
   editingMedId=m.id;
   $("dialogName").value=m.name;
-  $("dialogFrequency").value=m.frequency==="alternate"?"alternate":"daily";
+  $("dialogFrequency").value=(m.frequency==="interval"||m.frequency==="alternate")?"interval":"daily";
+  $("dialogIntervalDays").value=m.frequency==="alternate"?2:(Number(m.intervalDays)||2);
+  $("intervalDaysRow").style.display=$("dialogFrequency").value==="interval"?"flex":"none";
   $("editDialog").classList.add("open");
   setTimeout(()=>$("dialogName").focus(),50);
 }
@@ -312,7 +322,7 @@ function renderSettings(){
   if(!state.meds.length){root.innerHTML='<div class="sub">登録された薬はありません。</div>';return;}
   state.meds.forEach((m,index)=>{
     const row=document.createElement("div");row.className="medsetting";
-    row.innerHTML=`<div><div class="name">${escapeHtml(m.name)}</div><div class="sub">${m.frequency==="alternate"?"隔日":"毎日"} ・ 表示順 ${index+1}</div></div><div class="buttons"><button class="secondary small orderbtn up" aria-label="${escapeHtml(m.name)}を上へ" ${index===0?"disabled":""}>↑</button><button class="secondary small orderbtn down" aria-label="${escapeHtml(m.name)}を下へ" ${index===state.meds.length-1?"disabled":""}>↓</button><button class="secondary small edit">名前・頻度</button><button class="danger small delete">削除</button></div>`;
+    row.innerHTML=`<div><div class="name">${escapeHtml(m.name)}</div><div class="sub">${(m.frequency==="interval"||m.frequency==="alternate")?` ${m.frequency==="alternate"?2:(Number(m.intervalDays)||2)}日ごと`:"毎日"} ・ 表示順 ${index+1}</div></div><div class="buttons"><button class="secondary small orderbtn up" aria-label="${escapeHtml(m.name)}を上へ" ${index===0?"disabled":""}>↑</button><button class="secondary small orderbtn down" aria-label="${escapeHtml(m.name)}を下へ" ${index===state.meds.length-1?"disabled":""}>↓</button><button class="secondary small edit">名前・頻度</button><button class="danger small delete">削除</button></div>`;
     row.querySelector(".up").addEventListener("click",()=>moveMed(index,-1));
     row.querySelector(".down").addEventListener("click",()=>moveMed(index,1));
     row.querySelector(".edit").addEventListener("click",()=>openEditDialog(m));
@@ -368,16 +378,23 @@ $("saveTimeEdit").addEventListener("click",saveRecordTime);
 $("deleteRecordBtn").addEventListener("click",deleteRecord);
 $("cancelActionConfirm").addEventListener("click",closeActionConfirm);
 $("acceptActionConfirm").addEventListener("click",acceptActionConfirm);
+$("dialogFrequency").addEventListener("change",()=>{$("intervalDaysRow").style.display=$("dialogFrequency").value==="interval"?"flex":"none";});
 $("saveEdit").addEventListener("click",()=>{
   const m=state.meds.find(x=>x.id===editingMedId);
   if(!m){closeEditDialog();return;}
   const name=$("dialogName").value.trim();
   if(!name){toast("薬の名前を入力してください");$("dialogName").focus();return;}
   const freq=$("dialogFrequency").value;
+  const days=Number($("dialogIntervalDays").value);
+  if(freq==="interval"&&(!Number.isInteger(days)||days<1||days>365)){toast("服薬間隔は1〜365日の整数で入力してください");$("dialogIntervalDays").focus();return;}
   m.name=name.slice(0,60);
-  if(freq==="alternate"&&m.frequency!=="alternate")m.anchorDate=dayKey(now());
+  const oldFreq=m.frequency==="alternate"?"interval":m.frequency;
+  const oldDays=m.frequency==="alternate"?2:Number(m.intervalDays||2);
+  if(freq==="interval"&&(oldFreq!=="interval"||oldDays!==days))m.anchorDate=dayKey(now());
   if(freq==="daily")delete m.anchorDate;
-  m.frequency=freq;save();closeEditDialog();render();toast("薬の設定を保存しました");
+  m.frequency=freq;
+  if(freq==="interval")m.intervalDays=days;else delete m.intervalDays;
+  save();closeEditDialog();render();toast("薬の設定を保存しました");
 });
 $("cancelDelete").addEventListener("click",()=>{$("deleteDialog").classList.remove("open");pendingDeleteId=null;});
 $("confirmDelete").addEventListener("click",()=>{
