@@ -44,6 +44,7 @@ h1{font-size:23px;margin:0;font-weight:850}
 .next{font-size:14px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
 .next strong{color:var(--green);font-size:16px}
 .med.off .medname,.med.off .log{color:#687386}
+.med.off .take{background:#c4cbd5;color:#fff}
 .medright{display:flex;flex-direction:column;gap:7px}
 .take{min-height:56px;font-size:16px;line-height:1.15;padding:8px}
 .take:disabled{background:#c4cbd5;color:#fff;cursor:not-allowed}
@@ -196,13 +197,25 @@ function load(){
   save();
 }
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));return true;}catch(e){return false;}}
+function intervalDaysFor(m){
+  return m.frequency==="alternate"?2:Math.max(1,Number(m.intervalDays)||2);
+}
 function scheduled(m){
   if(m.frequency!=="interval"&&m.frequency!=="alternate")return true;
   const anchor=m.anchorDate||state.recordsDate||dayKey(now());
   const a=new Date(anchor+"T12:00:00"),b=new Date(dayKey(now())+"T12:00:00");
   const days=Math.round((b-a)/86400000);
-  const every=m.frequency==="alternate"?2:Math.max(1,Number(m.intervalDays)||2);
-  return days>=0&&days%every===0;
+  return days>=0&&days%intervalDaysFor(m)===0;
+}
+function nextScheduledKey(m){
+  const today=dayKey(now());
+  const anchor=m.anchorDate||state.recordsDate||today;
+  const every=intervalDaysFor(m);
+  const a=new Date(anchor+"T12:00:00"),b=new Date(today+"T12:00:00");
+  const elapsed=Math.round((b-a)/86400000);
+  if(elapsed<0)return anchor;
+  const add=every-(elapsed%every);
+  return addDaysKey(today,add);
 }
 function toast(s){$("toast").textContent=s;$("toast").style.display="block";clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").style.display="none",2400);}
 function render(){
@@ -228,9 +241,13 @@ function render(){
     const next=last?new Date(new Date(last).getTime()+Number(state.interval)*3600000):null;
     const nextText=next?timeFmt(next.toISOString()):"—";
     const intervalMode=m.frequency==="interval"||m.frequency==="alternate";
-    const nextDoseDate=intervalMode&&m.lastDoseDate?addDaysKey(m.lastDoseDate,m.frequency==="alternate"?2:(Number(m.intervalDays)||2)):null;
-    const nextDateText=nextDoseDate?`<span class="nextdate">次は${shortDate(nextDoseDate)}</span>`:"";
-    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div></div><div class="medright"><button class="primary take">${due?`服薬を記録${intervalMode?"":"<br><span class=\"nexttime\">"+escapeHtml(nextText)+"</span>"}${nextDateText}`:"今日は対象外"}</button></div>`;
+    const nextDoseDate=intervalMode?(due?(m.lastDoseDate?addDaysKey(m.lastDoseDate,intervalDaysFor(m)):null):nextScheduledKey(m)):null;
+    let intervalButtonText="";
+    if(intervalMode){
+      if(due&&m.lastDoseDate!==dayKey(now()))intervalButtonText="本日服用日";
+      else intervalButtonText=`次の服用　${shortDate(nextDoseDate)}`;
+    }
+    card.innerHTML=`<div class="medleft"><div class="medname">${escapeHtml(m.name)}</div></div><div class="medright"><button class="primary take${intervalMode&&!due?" offtake":""}">${intervalMode?intervalButtonText:(due?`服薬を記録<br><span class=\"nexttime\">${escapeHtml(nextText)}</span>`:"今日は対象外")}</button></div>`;
     card.querySelector(".medleft").appendChild(log);
     card.querySelector(".take").addEventListener("click",()=>{
       if(!scheduled(m)){
